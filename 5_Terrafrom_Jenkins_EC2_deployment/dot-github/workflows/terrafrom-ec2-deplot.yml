@@ -1,0 +1,65 @@
+name: Deploy EC2 with Terraform
+
+on:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - "**/README.md"
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    outputs:
+      ec2_public_ips: ${{ steps.output-public-ips.outputs.ec2_public_ips }}
+    steps:
+      # Step 1: Checkout the repository
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      # Step 2: Setup Terraform
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: 1.5.5
+
+      # Step 3: Configure AWS Credentials
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v3
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: "ap-south-1"
+
+      # Step 4: Move to Terraform Directory
+      - name: Change to Terraform Directory
+        working-directory: ./terraform
+        run: pwd
+
+      # Step 5: Terraform Init
+      - name: Terraform Init
+        working-directory: ./terraform
+        run: terraform init
+
+      # Step 6: Terraform Plan
+      - name: Terraform Plan
+        working-directory: ./terraform
+        run: terraform plan -var="public_key=${{ secrets.PUBLIC_KEY }}"
+
+      # Step 7: Terraform Apply
+      - name: Terraform Apply
+        id: terraform-apply
+        working-directory: ./terraform
+        run: terraform apply -var="public_key=${{ secrets.PUBLIC_KEY }}" -auto-approve
+
+      # Step 8: Output Public IPs
+      - name: Get EC2 Public IPs
+        id: output-public-ips
+        working-directory: ./terraform
+        run: |
+          terraform output -json aws_instances > public_ips.json
+          echo "Terraform output JSON:"
+          cat public_ips.json
+          PUBLIC_IPS=$(jq -r '.value[]' public_ips.json | tr '\n' ' ')
+          echo "Parsed Public IPs: $PUBLIC_IPS"
+          echo "ec2_public_ips=$PUBLIC_IPS" >> $GITHUB_OUTPUT
